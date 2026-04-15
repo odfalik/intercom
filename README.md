@@ -13,6 +13,9 @@ Each Claude Code session becomes an agent, addressed by its tmux window name. Ag
                     (~/.config/intercom/events.jsonl)
 ```
 
+<img width="768" height="63" alt="image" src="https://github.com/user-attachments/assets/2093eeff-bbb1-498d-a8d5-51feccee03c1" />
+
+
 ## Requirements
 
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (with channel plugin support)
