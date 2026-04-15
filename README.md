@@ -134,6 +134,7 @@ send(to=["training", "eval"], message="shutting down the cluster in 10 min")
 
 ## Limitations
 
+- **Development channels flag**: channel plugins require `--dangerously-load-development-channels`, which shows a confirmation prompt on every launch. This is a Claude Code limitation, not an intercom one. You'll need to press Enter to confirm each time (or use `--allow-dangerously-skip-permissions` to skip it).
 - **Same machine only**: communication is via the local filesystem
 - **No message history**: agents start with a blank slate
 - **Plain text only**: no structured data, no attachments
