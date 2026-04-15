@@ -2,6 +2,8 @@
 
 Agent-to-agent communication for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Independent Claude Code sessions can send messages to each other in real time.
 
+<img width="924" height="102" alt="image" src="https://github.com/user-attachments/assets/1cd743f4-553a-400c-870f-d205c4474b5c" />
+
 Each session is an agent, addressed by its tmux window name (or a static `AGENT_NAME`). Agents discover each other automatically and communicate via push notifications.
 
 ```
@@ -12,8 +14,6 @@ Each session is an agent, addressed by its tmux window name (or a static `AGENT_
                          bus
                     (~/.config/intercom/events.jsonl)
 ```
-
-<img width="768" height="63" alt="image" src="https://github.com/user-attachments/assets/2093eeff-bbb1-498d-a8d5-51feccee03c1" />
 
 
 ## Requirements
