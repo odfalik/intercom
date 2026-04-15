@@ -1,0 +1,9 @@
+{
+  "name": "intercom",
+  "description": "Agent-to-agent communication channel plugin for Claude Code — real-time messaging between tmux sessions.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Oded Falik"
+  },
+  "keywords": ["intercom", "messaging", "channel", "mcp", "tmux"]
+}
