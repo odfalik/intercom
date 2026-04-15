@@ -1,10 +1,10 @@
 # Intercom
 
-Agent-to-agent communication for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Independent Claude Code sessions can send messages to each other in real time.
+Agent-to-agent communication for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Independent Claude Code sessions can send messages to each other in real time via push notifications. No shared files, no polling, no "write to a markdown file and hope the other agent reads it." Messages are delivered directly into the recipient's session the moment they're sent.
 
 <img width="924" height="102" alt="image" src="https://github.com/user-attachments/assets/1cd743f4-553a-400c-870f-d205c4474b5c" />
 
-Each session is an agent, addressed by its tmux window name (or a static `AGENT_NAME`). Agents discover each other automatically and communicate via push notifications.
+Each session is an agent, addressed by its tmux window name (or a static `AGENT_NAME`). Agents discover each other automatically.
 
 ```
 ┌─────────────────────┐         ┌─────────────────────┐
