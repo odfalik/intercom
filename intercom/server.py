@@ -38,32 +38,46 @@ _AGENTS_DIR = _STATE_DIR / "agents"
 _EVENTS_FILE = _STATE_DIR / "events.jsonl"
 _SESSIONS_DIR = _STATE_DIR / "sessions"
 
-# Our pane ID and lock file handle (kept open for lifetime of process)
-_pane_id: str | None = None  # e.g. "%42"
+# Our agent key and lock file handle (kept open for lifetime of process)
+_agent_key: str | None = None  # tmux pane ID (e.g. "%42") or "pid_{N}" for non-tmux
+_static_name: str | None = None  # set when using AGENT_NAME (no tmux)
 _lock_fh: Any = None  # file handle held open with flock
 
 
 # ---------------------------------------------------------------------------
-# tmux helpers
+# Identity helpers
 # ---------------------------------------------------------------------------
 
-def _get_tmux_pane() -> str:
-    """Return $TMUX_PANE or raise with a clear error."""
+def _resolve_identity() -> tuple[str, str | None]:
+    """Return (agent_key, static_name).
+
+    In tmux: agent_key = $TMUX_PANE, static_name = None (resolved live).
+    With AGENT_NAME: agent_key = "pid_{PID}", static_name = $AGENT_NAME.
+    """
     pane = os.environ.get("TMUX_PANE")
-    if not pane:
-        raise RuntimeError(
-            "intercom requires tmux. Start Claude Code inside a tmux session."
-        )
-    return pane
+    if pane:
+        return pane, None
+
+    name = os.environ.get("AGENT_NAME")
+    if name:
+        return f"pid_{os.getpid()}", name
+
+    raise RuntimeError(
+        "intercom requires either tmux ($TMUX_PANE) or $AGENT_NAME to be set."
+    )
 
 
-def _pane_to_filename(pane: str) -> str:
-    """Sanitize pane ID for use as filename. '%42' -> 'pane_42'."""
-    return "pane_" + pane.lstrip("%")
+def _key_to_filename(key: str) -> str:
+    """Sanitize agent key for use as filename. '%42' -> 'pane_42', 'pid_123' -> 'pid_123'."""
+    if key.startswith("%"):
+        return "pane_" + key.lstrip("%")
+    return key
 
 
 def _get_window_name(pane: str) -> str | None:
-    """Query tmux for the window name of a pane."""
+    """Query tmux for the window name of a pane. Returns None for non-tmux keys."""
+    if not pane.startswith("%"):
+        return None
     try:
         result = subprocess.run(
             ["tmux", "display-message", "-p", "-t", pane, "#{window_name}"],
@@ -77,8 +91,10 @@ def _get_window_name(pane: str) -> str | None:
 
 
 def _my_name() -> str:
-    """Get our current tmux window name."""
-    name = _get_window_name(_pane_id) if _pane_id else None
+    """Get our current name. Live tmux lookup, or static AGENT_NAME."""
+    if _static_name:
+        return _static_name
+    name = _get_window_name(_agent_key) if _agent_key else None
     return name or "unknown"
 
 
@@ -90,10 +106,13 @@ def _acquire_lock() -> None:
     """Acquire exclusive flock on our agent lock file. Held for process lifetime."""
     global _lock_fh
     _AGENTS_DIR.mkdir(parents=True, exist_ok=True)
-    lock_path = _AGENTS_DIR / f"{_pane_to_filename(_pane_id)}.lock"
+    lock_path = _AGENTS_DIR / f"{_key_to_filename(_agent_key)}.lock"
     _lock_fh = open(lock_path, "w")
     fcntl.flock(_lock_fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    _lock_fh.write(str(os.getpid()))
+    # Write PID on first line; static name on second line (for non-tmux agents)
+    _lock_fh.write(str(os.getpid()) + "\n")
+    if _static_name:
+        _lock_fh.write(_static_name + "\n")
     _lock_fh.flush()
 
 
@@ -119,24 +138,39 @@ def _is_alive(lock_path: Path) -> bool:
         return False
 
 
-def _pane_id_from_lockfile(lock_path: Path) -> str:
-    """Extract pane ID from lock filename. 'pane_42.lock' -> '%42'."""
-    stem = lock_path.stem  # 'pane_42'
-    return "%" + stem.removeprefix("pane_")
+def _key_from_lockfile(lock_path: Path) -> str:
+    """Extract agent key from lock filename. 'pane_42.lock' -> '%42', 'pid_123.lock' -> 'pid_123'."""
+    stem = lock_path.stem
+    if stem.startswith("pane_"):
+        return "%" + stem.removeprefix("pane_")
+    return stem
+
+
+def _read_static_name(lock_path: Path) -> str | None:
+    """Read the static name (second line) from a lock file, if present."""
+    try:
+        with open(lock_path) as f:
+            lines = f.readlines()
+            if len(lines) >= 2:
+                return lines[1].strip()
+    except OSError:
+        pass
+    return None
 
 
 def _who() -> list[dict[str, str]]:
-    """Return list of active agents with their pane IDs and window names."""
+    """Return list of active agents with their keys and names."""
     _AGENTS_DIR.mkdir(parents=True, exist_ok=True)
     agents = []
     for lock_path in _AGENTS_DIR.glob("*.lock"):
         if not _is_alive(lock_path):
             continue
-        pane = _pane_id_from_lockfile(lock_path)
-        name = _get_window_name(pane)
+        key = _key_from_lockfile(lock_path)
+        # tmux agents: resolve name live. Non-tmux: read static name from lock file.
+        name = _get_window_name(key) or _read_static_name(lock_path)
         if name is None:
             continue
-        agents.append({"pane": pane, "name": name})
+        agents.append({"pane": key, "name": name})
     return agents
 
 
@@ -245,7 +279,7 @@ async def _watch_event_bus() -> None:
                 continue
 
             # Skip messages we sent ourselves
-            if event.get("from_pane") == _pane_id:
+            if event.get("from_pane") == _agent_key:
                 continue
 
             # Check if this message is addressed to us (by current window name)
@@ -347,7 +381,7 @@ async def _handle_send(args: dict[str, Any]) -> list[types.TextContent]:
     for recipient_name, _ in all_panes:
         event = {
             "to": recipient_name,
-            "from_pane": _pane_id,
+            "from_pane": _agent_key,
             "from_name": from_name,
             "message": message,
             "ts": ts,
@@ -368,7 +402,7 @@ async def _handle_who(args: dict[str, Any]) -> list[types.TextContent]:
 
     lines = []
     for a in agents:
-        marker = " (you)" if a["pane"] == _pane_id else ""
+        marker = " (you)" if a["pane"] == _agent_key else ""
         lines.append(f"  {a['name']} [{a['pane']}]{marker}")
 
     return [types.TextContent(
@@ -382,7 +416,7 @@ async def _handle_who(args: dict[str, Any]) -> list[types.TextContent]:
 # ---------------------------------------------------------------------------
 
 async def _main() -> None:
-    global _session, _pane_id
+    global _session, _agent_key, _static_name
 
     logging.basicConfig(
         level=logging.INFO,
@@ -390,13 +424,13 @@ async def _main() -> None:
         stream=sys.stderr,
     )
 
-    # Resolve tmux pane
-    _pane_id = _get_tmux_pane()
-    logger.info("Starting intercom for pane %s (window: %s)", _pane_id, _my_name())
+    # Resolve identity (tmux pane or AGENT_NAME)
+    _agent_key, _static_name = _resolve_identity()
+    logger.info("Starting intercom as %s (key: %s)", _my_name(), _agent_key)
 
     # Acquire liveness lock
     _acquire_lock()
-    logger.info("Acquired agent lock for %s", _pane_to_filename(_pane_id))
+    logger.info("Acquired agent lock for %s", _key_to_filename(_agent_key))
 
     async with stdio_server() as (read_stream, write_stream):
         init_options = InitializationOptions(
@@ -408,7 +442,7 @@ async def _main() -> None:
             ),
             instructions=(
                 "Intercom agent-to-agent channel plugin. Use the `who` tool to "
-                "see active agents and `send` to message them by tmux window name. "
+                "see active agents and `send` to message them by name. "
                 "Incoming messages appear as channel notifications."
             ),
         )
