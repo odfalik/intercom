@@ -31,17 +31,10 @@ Clone the repo:
 git clone https://github.com/odfalik/intercom.git
 ```
 
-Add the MCP server to your global config (`~/.mcp.json`):
+Register the MCP server:
 
-```json
-{
-  "mcpServers": {
-    "intercom": {
-      "command": "uv",
-      "args": ["run", "--directory", "/path/to/intercom", "intercom-server"]
-    }
-  }
-}
+```bash
+claude mcp add -s user intercom -- uv run --directory /path/to/intercom intercom-server
 ```
 
 ## Running Claude Code with Intercom
