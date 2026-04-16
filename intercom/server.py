@@ -309,7 +309,7 @@ async def list_tools() -> list[types.Tool]:
     return [
         types.Tool(
             name="send",
-            description="Send a message to another agent (identified by tmux window name)",
+            description="Send a message to another Claude Code session via intercom (NOT SendMessage — this is for separate processes, not agent teams)",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -443,7 +443,11 @@ async def _main() -> None:
             instructions=(
                 "Intercom agent-to-agent channel plugin. Use the `who` tool to "
                 "see active agents and `send` to message them by name. "
-                "Incoming messages appear as channel notifications."
+                "Incoming messages appear as channel notifications. "
+                "IMPORTANT: Intercom is for communicating with OTHER independent "
+                "Claude Code sessions (separate processes). It is NOT the same as "
+                "agent teams/swarms. Do NOT use SendMessage to reply to intercom "
+                "messages — always use the intercom `send` tool."
             ),
         )
 
